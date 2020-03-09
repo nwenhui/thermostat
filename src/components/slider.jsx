@@ -1,14 +1,13 @@
-import React, { Component } from "react";
+import React, { Component, createContext } from "react";
 // import { useMachine } from "@xstate/react";
 // import { Machine, interpret } from "xstate";
-import CircularSlider from "@fseehawer/react-circular-slider";
 // import { sliderMachine } from "../sliderMachine";
 
 /** DRAWING AND COLOUR VARIABLES & FUNCTIONS AHHHH */
 
 // canvas sizing
-var centerWidth = window.innerWidth / 2;
-var centerHeight = window.innerHeight / 2;
+var centerWidth = 500 / 2;
+var centerHeight = 500 / 2;
 
 /**
  * 0: slider base
@@ -18,6 +17,9 @@ var centerHeight = window.innerHeight / 2;
  * 4: slider gradient range colour1 (blue)
  * 5: slider gradient range colour2 (red)
  * 6: knob colour
+ * 7: mode = OFF
+ * 8: mode = HEATING
+ * 9: mode = COOLING
  */
 var color = [
   "#f7f7f8",
@@ -26,7 +28,10 @@ var color = [
   "#53585d",
   "#4b9ae5",
   "#ed6d67",
-  "f6c143"
+  "#f6c143",
+  "grey",
+  "red",
+  "blue"
 ];
 
 var backgroundColour = "#e3e4e6";
@@ -62,6 +67,18 @@ function generateRange() {
 
 var sliderRange = (5 / 3) * Math.PI; // range of circle used by thermostat
 var range = generateRange(); // array containing the available target temperatures to select from thermostat
+
+const modeEnum = {
+  OFF: 7,
+  HEATING: 8,
+  COOLING: 9
+};
+
+var mode = modeEnum.OFF;
+
+const DT = 2;
+const DTCOOL = 1.5;
+const DTHEAT = 1;
 
 /** THERMOSTAT EVENTS STUFFERINOS */
 
@@ -109,24 +126,57 @@ function clickedWithinRange(x, y) {
   }
 }
 
+/** TEST SLIDER THINGERINGS */
+
+var holdTest = false;
+var test = {
+  x: 0,
+  y: 0
+};
+// to generate the range of target temperature
+var testMin = 32;
+var testMax = 100;
+function generateRangetest() {
+  let rangeOfNumbers = [];
+  for (let i = testMin; i <= testMax; i++) {
+    rangeOfNumbers.push(i);
+  }
+  return rangeOfNumbers;
+}
+var testRange = generateRangetest();
+var sliderStart = 0;
+var sliderLength = 0;
+var sliderEnd = 0;
+
+function drawTestKnob(ctx, x, y) {
+  drawCircle(ctx, x, y, 8, "LightSteelBlue");
+  test.x = x;
+  test.y = y;
+}
+
+function clickedTestKnob(x, y) {
+  var distance = Math.sqrt(Math.pow(x - test.x, 2) + Math.pow(y - test.y, 2));
+  return distance <= 8;
+}
+
 class Slider extends Component {
   state = {
-    currentTemp: 72,
-    targetTemp: 50,
-    angle: 0
-    // current: sliderMachine.initialState
+    currentTemp: 32,
+    targetTemp: 50
   };
 
-  // service = interpret(sliderMachine).onTransition(current =>
-  //   this.setState({ current })
-  // );
-
   componentDidMount() {
-    // this.service.start();
+    if (hold || holdTest) {
+      document.body.style.cursor = "pointer";
+    } else {
+      document.body.style.cursor = "default";
+    }
+
     this.updateSlider();
 
     window.addEventListener("mousedown", event => {
       hold = true;
+      document.body.style.cursor = "pointer";
       click.x = event.x;
       click.y = event.y;
       if (hold) {
@@ -136,15 +186,21 @@ class Slider extends Component {
           index = parseInt((angle / sliderRange) * n);
           var temp = range[index];
           this.setState({ targetTemp: temp }, () => {
-            this.updateAngle();
             this.updateSlider();
+            this.updateTestSlider();
           });
         }
+      }
+      if (clickedTestKnob(click.x, click.y)) {
+        holdTest = true;
+        document.body.style.cursor = "pointer";
       }
     });
 
     window.addEventListener("mouseup", event => {
       hold = false;
+      holdTest = false;
+      document.body.style.cursor = "default";
     });
 
     window.addEventListener("wheel", event => {
@@ -153,8 +209,8 @@ class Slider extends Component {
         if (bufferDown % 10 == 0) {
           var temp = this.state.targetTemp - 1;
           this.setState({ targetTemp: temp }, () => {
-            this.updateAngle();
             this.updateSlider();
+            this.updateTestSlider();
           });
         }
       } else if (event.deltaY > 0 && this.state.targetTemp < 80 && hover) {
@@ -162,8 +218,8 @@ class Slider extends Component {
         if (bufferUp % 10 == 0) {
           var temp = this.state.targetTemp + 1;
           this.setState({ targetTemp: temp }, () => {
-            this.updateAngle();
             this.updateSlider();
+            this.updateTestSlider();
           });
         }
       }
@@ -174,6 +230,7 @@ class Slider extends Component {
       click.y = event.y;
       if (clickedSlider(click.x, click.y)) {
         hover = true;
+        document.body.style.cursor = "pointer";
         if (hold) {
           if (clickedWithinRange(click.x, click.y)) {
             var n = range.length;
@@ -181,24 +238,39 @@ class Slider extends Component {
             index = parseInt((angle / sliderRange) * n);
             var temp = range[index];
             this.setState({ targetTemp: temp }, () => {
-              this.updateAngle();
               this.updateSlider();
+              this.updateTestSlider();
             });
           }
         }
       } else {
         hover = false;
+        document.body.style.cursor = "default";
+      }
+      if (clickedTestKnob(click.x, click.y)) {
+        document.body.style.cursor = "pointer";
+      }
+      if (holdTest) {
+        var n = testRange.length;
+        if (click.x > sliderEnd) {
+          test.x = sliderEnd;
+          index = n - 1;
+        } else if (click.x < sliderStart) {
+          test.x = sliderStart;
+          index = 0;
+        } else {
+          var index = parseInt(((click.x - sliderStart) / sliderLength) * n);
+          test.x = click.x;
+        }
+        temp = testRange[index];
+        this.setState({ currentTemp: temp }, () => {
+          this.updateSlider();
+          this.updateTestSlider();
+        });
       }
     });
-  }
 
-  // componentWillUnmount() {
-  //   this.service.stop();
-  // }
-
-  updateAngle() {
-    // angle = (this.state.targetTemp - min) / range.length + (5 / 3) * Math.PI;
-    // this.setState({ angle });
+    this.drawTestSlider();
   }
 
   drawSlider() {
@@ -230,39 +302,33 @@ class Slider extends Component {
       170,
       (2 / 3) * Math.PI,
       (Math.PI * 1) / 3,
-      // 0,
-      // Math.PI * 2,
       false
     );
     ctx.fill();
     //slider background
-    drawCircle(ctx, centerWidth, centerHeight, 160, "white");
+    drawCircle(ctx, centerWidth, centerHeight, 160, color[mode]);
   }
 
-  //update slider text AND BACKGROUND COLOUR LATER
+  //update slider
   updateSlider() {
-    this.updateAngle();
     const canvas = this.refs.canvas;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    this.updateSliderColour();
     this.drawSlider();
-    this.updateSliderLabels();
     drawKnob(
       ctx,
       centerWidth - 160 * Math.cos(angle + (5 / 3) * Math.PI),
       centerHeight - 160 * Math.sin(angle + (5 / 3) * Math.PI)
-      // centerWidth - 160 * Math.cos(this.state.angle),
-      // centerHeight - 160 * Math.sin(this.state.angle)
-      // centerWidth - 160 * Math.cos(angle),
-      // centerHeight - 160 * Math.sin(angle)
     );
+    this.updateSliderLabels();
   }
 
+  //update slider text
   updateSliderLabels() {
     const canvas = this.refs.canvas;
     const ctx = canvas.getContext("2d");
-    ctx.clearRect(centerWidth - 100, centerHeight - 50, 200, 80);
-    ctx.fillStyle = "pink";
+    ctx.fillStyle = "white";
     ctx.font = "bold 70px Helvetica";
     ctx.fillText(
       this.state.targetTemp,
@@ -278,10 +344,62 @@ class Slider extends Component {
     );
   }
 
-  render() {
-    // const { current } = this.state;
-    // const { send } = this.service;
+  //get thermostat mode
+  updateSliderColour() {
+    if (this.state.currentTemp > this.state.targetTemp + DT + DTCOOL) {
+      mode = modeEnum.COOLING;
+    }
+    if (this.state.currentTemp < this.state.targetTemp - DT - DTHEAT) {
+      mode = modeEnum.HEATING;
+    }
+    if (
+      this.state.targetTemp - (DT - DTHEAT) < this.state.currentTemp &&
+      this.state.currentTemp < this.state.targetTemp + (DT - DTCOOL)
+    ) {
+      mode = modeEnum.OFF;
+    }
+  }
 
+  drawTestSlider() {
+    const canvas = this.refs.canvas;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = backgroundColour;
+    ctx.fillRect(centerWidth - 200, centerHeight + 210, 400, 50);
+    ctx.font = "17px Helvetica";
+    ctx.fillStyle = "black";
+    ctx.fillText("set current temperature", 50, 495);
+    sliderStart = 50 + ctx.measureText("set current temperature").width + 20;
+    sliderLength = 400 - ctx.measureText("set current temperature").width - 20;
+    sliderEnd = sliderStart + sliderLength;
+    ctx.beginPath();
+    ctx.moveTo(sliderStart, 490);
+    ctx.lineTo(sliderEnd, 490);
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = "Thistle";
+    ctx.lineCap = "round";
+    ctx.stroke();
+    drawTestKnob(ctx, sliderStart, 490);
+  }
+
+  updateTestSlider() {
+    const canvas = this.refs.canvas;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = backgroundColour;
+    ctx.fillRect(centerWidth - 200, centerHeight + 210, 400, 50);
+    ctx.font = "17px Helvetica";
+    ctx.fillStyle = "black";
+    ctx.fillText("set current temperature", 50, 495);
+    ctx.beginPath();
+    ctx.moveTo(sliderStart, 490);
+    ctx.lineTo(sliderEnd, 490);
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = "Thistle";
+    ctx.lineCap = "round";
+    ctx.stroke();
+    drawTestKnob(ctx, test.x, 490);
+  }
+
+  render() {
     return (
       <canvas
         ref="canvas"
